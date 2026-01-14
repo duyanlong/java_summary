@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarRocks SQL执行流程详解 - 索引页</title>
+    <style>
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #1a73e8;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 50px;
+        }
+        .button {
+            display: inline-block;
+            background-color: #1a73e8;
+            color: white;
+            padding: 15px 30px;
+            margin: 10px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 18px;
+            transition: background-color 0.3s;
+        }
+        .button:hover {
+            background-color: #0d47a1;
+        }
+        .description {
+            text-align: center;
+            margin: 20px 0;
+            max-width: 800px;
+        }
+    </style>
+</head>
+<body>
+    <h1>StarRocks SQL执行流程详解</h1>
+    
+    <div class="description">
+        <p>本文档详细介绍了StarRocks中SQL查询的完整执行流程，从客户端提交SQL到结果返回的全过程。由于内容较多，文档被分为两部分。</p>
+    </div>
+    
+    <div class="container">
+        <a href="starrocks_sql_execution_detailed_part2.html" class="button">第一部分：SQL解析到物理执行计划</a>
+        <a href="starrocks_sql_execution_detailed_part3.html" class="button">第二部分：Pipeline执行到结果返回</a>
+    </div>
+    
+    <div class="description">
+        <p>文档包含详细的流程图、架构图和时序图，帮助您理解StarRocks的查询执行机制。</p>
+        <p>参考资料：<a href="https://docs.starrocks.io/zh/docs/best_practices/query_tuning/query_planning/" target="_blank">StarRocks官方文档 - 查询规划</a></p>
+    </div>
+</body>
+</html>

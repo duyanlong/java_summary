@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engine类到StarRocksStreamLoadVisitor类的调用流程</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #1a73e8;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34a853;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #4285f4;
+            margin-top: 20px;
+        }
+        .flow-chart {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .component {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f0f8ff;
+            border-left: 4px solid #4285f4;
+            border-radius: 3px;
+        }
+        code {
+            background-color: #f5f5f5;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .step {
+            margin: 10px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        .step:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #4285f4;
+        }
+        .note {
+            background-color: #fff8e1;
+            padding: 10px;
+            border-left: 4px solid #ffc107;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Engine类Main方法到StarRocksStreamLoadVisitor类的调用流程</h1>
+    
+    <div class="flow-chart">
+        <h2>调用链路图</h2>
+        <pre>
+Engine.main
+  ↓
+Engine.entry
+  ↓
+Engine.start
+  ↓
+JobContainer.start
+  ↓
+JobContainer.init → JobContainer.initJobWriter → LoadUtil.loadJobPlugin → StarRocksWriter.Job
+  ↓
+JobContainer.split → StarRocksWriter.Job.split
+  ↓
+JobContainer.schedule
+  ↓
+TaskGroupContainer.start
+  ↓
+TaskGroupContainer.TaskExecutor
+  ↓
+WriterRunner.run
+  ↓
+StarRocksWriter.Task.init → StarRocksWriterManager构造函数 → StarRocksStreamLoadVisitor构造函数
+  ↓
+StarRocksWriter.Task.startWrite
+  ↓
+StarRocksWriterManager.writeRecord
+  ↓
+StarRocksWriterManager.flush
+  ↓
+StarRocksWriterManager.asyncFlush
+  ↓
+StarRocksStreamLoadVisitor.doStreamLoad
+        </pre>
+    </div>
+
+    <h2>调用流程详解</h2>
+
+    <h3>1. 入口点</h3>
+    <div class="component">
+        <p>程序从<code>Engine.main</code>方法开始执行，这是DataX的入口点。</p>
+    </div>
+
+    <h3>2. 任务解析与初始化</h3>
+    <div class="component">
+        <div class="step"><code>Engine.main</code> 调用 <code>Engine.entry</code> 解析命令行参数</div>
+        <div class="step"><code>Engine.entry</code> 调用 <code>Engine.start</code> 开始执行任务</div>
+        <div class="step"><code>Engine.start</code> 创建并启动 <code>JobContainer</code></div>
+    </div>
+
+    <h3>3. Job级别处理</h3>
+    <div class="component">
+        <div class="step"><code>JobContainer.start</code> 执行整个作业流程</div>
+        <div class="step"><code>JobContainer.init</code> 初始化Reader和Writer插件</div>
+        <div class="step"><code>JobContainer.initJobWriter</code> 通过反射加载Writer插件</div>
+        <div class="step"><code>LoadUtil.loadJobPlugin</code> 加载 <code>StarRocksWriter.Job</code> 类</div>
+    </div>
+
+    <h3>4. 任务拆分与调度</h3>
+    <div class="component">
+        <div class="step"><code>JobContainer.split</code> 将任务拆分为多个子任务</div>
+        <div class="step"><code>StarRocksWriter.Job.split</code> 根据并发数拆分Writer任务</div>
+        <div class="step"><code>JobContainer.schedule</code> 调度任务执行</div>
+        <div class="step"><code>TaskGroupContainer.start</code> 启动任务组执行</div>
+    </div>
+
+    <h3>5. Task级别执行</h3>
+    <div class="component">
+        <div class="step"><code>TaskGroupContainer</code> 创建 <code>TaskExecutor</code> 执行具体任务</div>
+        <div class="step"><code>TaskExecutor</code> 创建并启动 <code>WriterRunner</code> 线程</div>
+        <div class="step"><code>WriterRunner.run</code> 执行Writer任务</div>
+    </div>
+
+    <h3>6. StarRocks写入流程</h3>
+    <div class="component">
+        <div class="step"><code>StarRocksWriter.Task.init</code> 初始化Writer任务</div>
+        <div class="step">创建 <code>StarRocksWriterManager</code> 管理写入操作</div>
+        <div class="step"><code>StarRocksWriterManager</code> 构造函数中创建 <code>StarRocksStreamLoadVisitor</code></div>
+        <div class="step"><code>StarRocksWriter.Task.startWrite</code> 开始接收并写入记录</div>
+        <div class="step"><code>StarRocksWriterManager.writeRecord</code> 将记录添加到缓冲区</div>
+        <div class="step">当缓冲区达到阈值时，调用 <code>StarRocksWriterManager.flush</code></div>
+        <div class="step"><code>StarRocksWriterManager.asyncFlush</code> 异步执行刷新操作</div>
+        <div class="step">最终通过 <code>StarRocksStreamLoadVisitor.doStreamLoad</code> 将数据写入StarRocks</div>
+    </div>
+
+    <h2>关键组件职责</h2>
+
+    <h3>Engine</h3>
+    <div class="component">
+        <p>DataX的入口类，负责解析参数和启动作业。它处理命令行参数，初始化环境，并启动整个数据同步过程。</p>
+    </div>
+
+    <h3>JobContainer</h3>
+    <div class="component">
+        <p>作业容器，负责整个作业的生命周期管理。它是所有任务的master，负责初始化、拆分、调度、运行、回收、监控和汇报，但它并不做实际的数据同步操作。</p>
+    </div>
+
+    <h3>TaskGroupContainer</h3>
+    <div class="component">
+        <p>任务组容器，管理一组相关任务的执行。它负责创建和管理多个TaskExecutor，每个TaskExecutor负责一个具体的读写任务。</p>
+    </div>
+
+    <h3>StarRocksWriter</h3>
+    <div class="component">
+        <p>StarRocks写入插件，包含Job和Task两个内部类：</p>
+        <ul>
+            <li><strong>Job类</strong>：负责任务的拆分、准备和收尾工作</li>
+            <li><strong>Task类</strong>：负责实际的数据写入操作</li>
+        </ul>
+    </div>
+
+    <h3>StarRocksWriterManager</h3>
+    <div class="component">
+        <p>管理StarRocks的写入操作，包括缓冲、批处理和重试。它维护一个数据缓冲区，当缓冲区达到一定大小或经过一定时间后，会触发数据刷新操作。</p>
+    </div>
+
+    <h3>StarRocksStreamLoadVisitor</h3>
+    <div class="component">
+        <p>执行实际的Stream Load操作，与StarRocks服务器通信。它负责构建HTTP请求，将数据发送到StarRocks服务器，并处理响应结果。</p>
+    </div>
+
+    <div class="note">
+        <p><strong>注意</strong>：这个调用链路展示了DataX如何通过插件化架构，将数据从源端读取并写入到StarRocks数据库的完整流程。整个过程遵循DataX的"框架+插件"设计理念，通过统一的接口规范实现了不同数据源之间的数据交换。</p>
+    </div>
+</body>
+</html>

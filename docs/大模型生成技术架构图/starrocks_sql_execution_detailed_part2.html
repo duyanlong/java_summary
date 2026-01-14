@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarRocks SQL执行流程详解</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3, h4 {
+            color: #1a73e8;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .mermaid {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .note {
+            background-color: #e8f0fe;
+            border-left: 4px solid #1a73e8;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .warning {
+            background-color: #fef8e8;
+            border-left: 4px solid #fbbc04;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>StarRocks SQL执行流程详解</h1>
+
+    <h2>1. 整体流程概览</h2>
+    <p>StarRocks是一个高性能分析型数据库，其SQL查询执行流程涉及多个组件和阶段。从客户端提交SQL到最终返回结果，整个过程可以分为以下几个主要阶段：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[客户端提交SQL] --> B[FE接收SQL请求]
+        B --> C[SQL解析]
+        C --> D[逻辑执行计划生成]
+        D --> E[CBO优化]
+        E --> F[物理执行计划生成]
+        F --> G[任务拆分为Fragments]
+        G --> H[FragmentInstance创建与分发]
+        H --> I[BE构建Pipeline执行计划]
+        I --> J[BE执行Pipeline]
+        J --> K[结果汇总]
+        K --> L[返回客户端]
+    </div>
+
+    <p>在这个流程中，FE（Frontend）负责SQL解析、查询规划和优化，而BE（Backend）负责实际的数据处理和计算。下面我们将详细介绍每个阶段的工作原理。</p>
+
+    <h2>2. 客户端连接过程</h2>
+    <p>StarRocks支持MySQL协议，客户端可以使用MySQL命令行工具或兼容MySQL的驱动程序连接到StarRocks。</p>
+
+    <div class="mermaid">
+    sequenceDiagram
+        participant Client as 客户端
+        participant FE as Frontend
+        participant QeService as QeService
+        participant MysqlServer as MysqlServer
+        participant ConnectScheduler as ConnectScheduler
+        
+        Client->>FE: 建立TCP连接
+        FE->>QeService: 初始化QeService
+        QeService->>MysqlServer: 创建MysqlServer
+        MysqlServer->>ConnectScheduler: 注册连接调度器
+        Client->>MysqlServer: 发送认证包
+        MysqlServer->>ConnectScheduler: 提交连接上下文
+        ConnectScheduler->>ConnectScheduler: 创建ConnectContext
+        ConnectScheduler->>Client: 发送认证响应
+        Note over Client,ConnectScheduler: 连接建立完成
+    </div>
+
+    <p>连接过程的关键步骤：</p>
+    <ol>
+        <li>客户端通过MySQL协议连接到StarRocks FE节点</li>
+        <li>FE的QeService组件初始化MysqlServer，负责处理MySQL协议</li>
+        <li>MysqlServer接收客户端连接请求，创建ConnectContext对象表示一个客户端会话</li>
+        <li>ConnectScheduler管理所有客户端连接，并为每个连接分配处理线程</li>
+        <li>认证成功后，连接建立完成，客户端可以开始发送SQL查询</li>
+    </ol>
+
+    <h2>3. SQL解析</h2>
+    <p>当客户端发送SQL查询时，StarRocks首先需要将SQL文本解析成抽象语法树（AST）。</p>
+
+    <div class="mermaid">
+    flowchart LR
+        A[SQL文本] --> B[词法分析]
+        B --> C[语法分析]
+        C --> D[生成AST]
+        D --> E[语义分析]
+    </div>
+
+    <p>SQL解析过程：</p>
+    <ol>
+        <li>ConnectProcessor接收客户端发送的SQL查询</li>
+        <li>调用SqlParser.parse()方法将SQL文本解析成StatementBase对象</li>
+        <li>StatementBase是所有SQL语句的基类，包括QueryStatement、InsertStmt、DeleteStmt等</li>
+        <li>解析过程使用ANTLR解析器生成器，将SQL文本转换为抽象语法树</li>
+        <li>语义分析阶段检查表名、列名是否存在，数据类型是否匹配等</li>
+    </ol>
+
+    <p>关键代码流程：</p>
+    <pre><code>// ConnectProcessor.java
+List&lt;StatementBase&gt; stmts = SqlParser.parse(originStmt.originStmt, context.getSessionVariable());
+parsedStmt = stmts.get(originStmt.idx);
+parsedStmt.setOrigStmt(originStmt);
+
+// 语义分析
+com.starrocks.sql.analyzer.Analyzer.analyze(parsedStmt, context);
+</code></pre>
+
+    <h2>4. 逻辑执行计划生成</h2>
+    <p>SQL解析完成后，StarRocks会将AST转换为逻辑执行计划。逻辑执行计划描述了查询的操作步骤，但不涉及具体的执行算法和数据分布。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[AST] --> B[逻辑算子树构建]
+        B --> C[表达式重写]
+        C --> D[谓词下推]
+        D --> E[列裁剪]
+        E --> F[初始逻辑计划]
+    </div>
+
+    <p>逻辑计划生成过程：</p>
+    <ol>
+        <li>StatementPlanner将AST转换为初始的逻辑计划</li>
+        <li>逻辑计划由一系列逻辑算子组成，如LogicalScanOperator、LogicalFilterOperator、LogicalJoinOperator等</li>
+        <li>应用初步的优化规则，如表达式重写、谓词下推、列裁剪等</li>
+        <li>生成OptExpression对象，表示优化器可以处理的逻辑表达式树</li>
+    </ol>
+
+    <p>逻辑算子示例：</p>
+    <ul>
+        <li>LogicalScanOperator：表示对表的扫描操作</li>
+        <li>LogicalFilterOperator：表示过滤操作</li>
+        <li>LogicalProjectOperator：表示投影操作</li>
+        <li>LogicalJoinOperator：表示连接操作</li>
+        <li>LogicalAggregationOperator：表示聚合操作</li>
+        <li>LogicalSortOperator：表示排序操作</li>
+    </ul>
+
+    <h2>5. CBO优化</h2>
+    <p>StarRocks采用基于代价的优化器（Cost-Based Optimizer，CBO）对逻辑执行计划进行优化。CBO使用统计信息评估不同执行计划的代价，选择代价最低的计划。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[初始逻辑计划] --> B[应用转换规则]
+        B --> C[枚举等价计划]
+        C --> D[代价估算]
+        D --> E[选择最优计划]
+        E --> F[优化后的逻辑计划]
+    </div>
+
+    <p>CBO优化过程：</p>
+    <ol>
+        <li>收集表和列的统计信息，如行数、distinct值数量、数据分布等</li>
+        <li>应用一系列转换规则，生成等价的逻辑计划</li>
+        <li>为每个计划估算执行代价，考虑CPU、内存、I/O等因素</li>
+        <li>选择代价最低的计划作为最终的逻辑执行计划</li>
+    </ol>
+
+    <h3>5.1 CBO优化规则</h3>
+    <p>StarRocks的CBO优化器实现了多种优化规则，下面详细介绍几个重要的优化规则：</p>
+
+    <h4>5.1.1 谓词下推（Predicate Pushdown）</h4>
+    <p>谓词下推是将过滤条件尽可能早地应用到数据源，减少中间结果集的大小。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph 优化前
+            A1[Join] --> B1[Scan A]
+            A1 --> C1[Scan B]
+            D1[Filter] --> A1
+        end
+        subgraph 优化后
+            A2[Join] --> B2[Filter]
+            A2 --> C2[Filter]
+            B2 --> D2[Scan A]
+            C2 --> E2[Scan B]
+        end
+    </div>
+
+    <p>谓词下推的好处：</p>
+    <ul>
+        <li>减少从存储层读取的数据量</li>
+        <li>减少中间结果集的大小，降低内存使用</li>
+        <li>减少后续操作的计算量</li>
+    </ul>
+
+    <h4>5.1.2 连接重排序（Join Reordering）</h4>
+    <p>连接重排序是调整多表连接的顺序，以减少中间结果集的大小。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph 优化前
+            A1[Join] --> B1[Join]
+            A1 --> C1[Scan C]
+            B1 --> D1[Scan A]
+            B1 --> E1[Scan B]
+        end
+        subgraph 优化后
+            A2[Join] --> B2[Scan A]
+            A2 --> C2[Join]
+            C2 --> D2[Scan B]
+            C2 --> E2[Scan C]
+        end
+    </div>
+
+    <p>连接重排序的策略：</p>
+    <ul>
+        <li>基于表的大小和过滤条件选择最优的连接顺序</li>
+        <li>考虑连接条件的选择性</li>
+        <li>使用动态规划算法枚举可能的连接顺序</li>
+    </ul>
+
+    <h4>5.1.3 连接算法选择（Join Strategy Selection）</h4>
+    <p>根据表的大小、分布情况选择最合适的连接算法。</p>
+
+    <div class="mermaid">
+    flowchart LR
+        A[表大小和分布] --> B{选择连接算法}
+        B -->|小表连大表| C[Broadcast Hash Join]
+        B -->|大表连大表| D[Shuffle Hash Join]
+        B -->|有序数据| E[Merge Join]
+        B -->|其他情况| F[Nested Loop Join]
+    </div>
+
+    <p>StarRocks支持的连接算法：</p>
+    <ul>
+        <li>Broadcast Hash Join：将小表广播到所有节点，适合一大一小表连接</li>
+        <li>Shuffle Hash Join：对两表按连接键重分布，适合两个大表连接</li>
+        <li>Merge Join：对有序数据进行合并连接，效率高但要求数据有序</li>
+        <li>Nested Loop Join：嵌套循环连接，适用于小数据集或特殊场景</li>
+    </ul>
+
+    <h4>5.1.4 列裁剪（Column Pruning）</h4>
+    <p>列裁剪是只读取和处理查询所需的列，减少I/O和内存使用。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph 优化前
+            A1[Project a,b] --> B1[Scan Table 读取所有列]
+        end
+        subgraph 优化后
+            A2[Project a,b] --> B2[Scan Table 只读取a,b列]
+        end
+    </div>
+
+    <p>列裁剪的实现：</p>
+    <ul>
+        <li>分析查询中使用的列</li>
+        <li>将列需求信息从上层算子传递到下层算子</li>
+        <li>在扫描算子中只读取必要的列</li>
+    </ul>
+
+    <h4>5.1.5 分区裁剪（Partition Pruning）</h4>
+    <p>分区裁剪是根据查询条件只扫描相关的分区，避免全表扫描。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph 优化前
+            A1[Filter date='2023-01-01'] --> B1[Scan Table 所有分区]
+        end
+        subgraph 优化后
+            A2[Filter date='2023-01-01'] --> B2[Scan Table 只扫描2023-01-01分区]
+        end
+    </div>
+
+    <p>分区裁剪的好处：</p>
+    <ul>
+        <li>大幅减少需要扫描的数据量</li>
+        <li>提高查询响应速度</li>
+        <li>减少系统资源消耗</li>
+    </ul>
+
+    <h4>5.1.6 聚合操作优化（Aggregation Optimization）</h4>
+    <p>优化聚合操作，包括两阶段聚合、预聚合等技术。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph 优化前
+            A1[Global Aggregation] --> B1[Scan Table]
+        end
+        subgraph 优化后
+            A2[Global Aggregation] --> B2[Local Aggregation]
+            B2 --> C2[Scan Table]
+        end
+    </div>
+
+    <p>聚合优化策略：</p>
+    <ul>
+        <li>两阶段聚合：先本地预聚合，再全局聚合，减少数据传输</li>
+        <li>利用物化视图中的预聚合结果</li>
+        <li>聚合算子下推到存储层</li>
+    </ul>
+
+    <h4>5.1.7 子查询优化（Subquery Optimization）</h4>
+    <p>将子查询转换为更高效的形式，如连接操作。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph 优化前
+            A1[Filter IN Subquery] --> B1[Scan Table A]
+            A1 --> C1[Scan Table B]
+        end
+        subgraph 优化后
+            A2[Semi Join] --> B2[Scan Table A]
+            A2 --> C2[Scan Table B]
+        end
+    </div>
+
+    <p>子查询优化技术：</p>
+    <ul>
+        <li>子查询去关联化</li>
+        <li>将IN/EXISTS子查询转换为半连接（Semi Join）</li>
+        <li>将相关子查询转换为连接操作</li>
+    </ul>
+
+    <h4>5.1.8 公共子表达式消除（Common Subexpression Elimination）</h4>
+    <p>识别并复用查询中的公共子表达式，避免重复计算。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph 优化前
+            A1[Project a+b, (a+b)*c] --> B1[Scan Table]
+        end
+        subgraph 优化后
+            A2[Project temp, temp*c] --> B2[Project a+b AS temp]
+            B2 --> C2[Scan Table]
+        end
+    </div>
+
+    <p>公共子表达式消除的应用：</p>
+    <ul>
+        <li>识别查询中重复的表达式</li>
+        <li>计算一次并复用结果</li>
+        <li>减少CPU计算开销</li>
+    </ul>
+
+    <h4>5.1.9 常量折叠（Constant Folding）</h4>
+    <p>在编译时计算常量表达式，减少运行时计算。</p>
+
+    <div class="mermaid">
+    flowchart LR
+        A[Project 1+2*3 AS c] --> B[Scan Table]
+        C[Project 7 AS c] --> D[Scan Table]
+        A -.优化.-> C
+    </div>
+
+    <p>常量折叠的例子：</p>
+    <ul>
+        <li>1+2*3 → 7</li>
+        <li>CONCAT('Hello', ' ', 'World') → 'Hello World'</li>
+        <li>CASE WHEN 1=1 THEN 'A' ELSE 'B' END → 'A'</li>
+    </ul>
+
+    <h4>5.1.10 物化视图重写（Materialized View Rewrite）</h4>
+    <p>利用预计算的物化视图加速查询。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph 优化前
+            A1[Aggregation] --> B1[Join]
+            B1 --> C1[Scan Table A]
+            B1 --> D1[Scan Table B]
+        end
+        subgraph 优化后
+            A2[Aggregation] --> B2[Scan Materialized View]
+        end
+    </div>
+
+    <p>物化视图重写过程：</p>
+    <ul>
+        <li>识别查询是否可以使用物化视图</li>
+        <li>检查物化视图的新鲜度</li>
+        <li>重写查询以使用物化视图</li>
+        <li>验证重写后的查询结果与原查询一致</li>
+    </ul>
+
+    <h4>5.1.11 运行时过滤器（Runtime Filter）</h4>
+    <p>在查询执行过程中动态生成过滤条件，减少数据扫描量。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[Join] --> B[Scan Fact Table]
+        A --> C[Scan Dimension Table]
+        C --生成过滤器--> B
+    </div>
+
+    <p>运行时过滤器的工作原理：</p>
+    <ul>
+        <li>在连接操作中，先处理维度表</li>
+        <li>根据维度表的连接键生成过滤器（如Bloom过滤器）</li>
+        <li>将过滤器应用到事实表的扫描中</li>
+        <li>减少需要参与连接的行数</li>
+    </ul>
+
+    <h2>6. 物理执行计划生成</h2>
+    <p>优化后的逻辑计划需要转换为物理执行计划，物理计划包含具体的执行算法和数据分布策略。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[优化后的逻辑计划] --> B[物理算子选择]
+        B --> C[数据分布策略选择]
+        C --> D[并行度确定]
+        D --> E[资源分配]
+        E --> F[最终物理执行计划]
+    </div>
+
+    <p>物理计划生成过程：</p>
+    <ol>
+        <li>将逻辑算子转换为物理算子，如LogicalScanOperator转换为OlapScanNode</li>
+        <li>选择适当的执行算法，如哈希连接、排序合并连接等</li>
+        <li>确定数据分布策略，如广播、哈希分布等</li>
+        <li>确定执行并行度，根据数据量和系统资源</li>
+        <li>生成最终的物理执行计划</li>
+    </ol>
+
+    <p>物理算子示例：</p>
+    <ul>
+        <li>OlapScanNode：扫描Olap表数据</li>
+        <li>HashJoinNode：使用哈希表实现连接</li>
+        <li>AggregationNode：执行聚合操作</li>
+        <li>SortNode：执行排序操作</li>
+        <li>ExchangeNode：负责数据重分布</li>
+    </ul>
+
+    <h2>7. 任务拆分为Fragments</h2>
+    <p>物理执行计划被拆分为多个可并行执行的Fragment，每个Fragment代表查询的一部分。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[物理执行计划] --> B[按数据交换点拆分]
+        B --> C[Fragment 1]
+        B --> D[Fragment 2]
+        B --> E[Fragment 3]
+        C --> F[确定Fragment执行位置]
+        D --> F
+        E --> F
+    </div>
+
+    <p>Fragment拆分过程：</p>
+    <ol>
+        <li>在数据交换点（ExchangeNode）处拆分物理计划</li>
+        <li>每个Fragment包含一组可以在同一节点执行的算子</li>
+        <li>确定每个Fragment的执行位置（BE节点）</li>
+        <li>确定Fragment之间的数据交换模式</li>
+    </ol>
+
+    <p>数据交换模式：</p>
+    <ul>
+        <li>BROADCAST：将数据广播到所有目标节点</li>
+        <li>HASH：根据哈希值将数据分发到目标节点</li>
+        <li>RANDOM：随机分发数据到目标节点</li>
+        <li>GATHER：将数据汇总到单个节点</li>
+    </ul>
+
+    <h2>8. FragmentInstance创建与分发</h2>
+    <p>每个Fragment会在多个BE节点上创建实例（FragmentInstance）进行并行执行。</p>
+
+    <div class="mermaid">
+    sequenceDiagram
+        participant FE as Frontend
+        participant Coordinator as Coordinator
+        participant BE1 as Backend 1
+        participant BE2 as Backend 2
+        participant BE3 as Backend 3
+        
+        FE->>Coordinator: 创建Coordinator
+        Coordinator->>Coordinator: 生成执行计划
+        Coordinator->>BE1: 分发Fragment实例
+        Coordinator->>BE2: 分发Fragment实例
+        Coordinator->>BE3: 分发Fragment实例
+        BE1->>BE1: 创建FragmentInstance
+        BE2->>BE2: 创建FragmentInstance
+        BE3->>BE3: 创建FragmentInstance
+        Coordinator->>BE1: 启动执行
+        Coordinator->>BE2: 启动执行
+        Coordinator->>BE3: 启动执行
+    </div>
+
+    <p>FragmentInstance创建与分发过程：</p>
+    <ol>
+        <li>FE创建Coordinator对象，负责协调查询执行</li>
+        <li>Coordinator根据数据分布和负载情况决定每个Fragment在哪些BE节点上执行</li>
+        <li>Coordinator将Fragment实例分发到相应的BE节点</li>
+        <li>BE节点接收Fragment实例并准备执行</li>
+        <li>Coordinator发送启动命令，开始执行查询</li>
+    </ol>
+
+    <h2>9. BE构建Pipeline执行计划</h2>
+    <p>BE节点接收到FragmentInstance后，将其转换为Pipeline执行计划。Pipeline是一种更高效的执行模型，可以减少中间结果的物化。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[FragmentInstance] --> B[构建算子执行树]
+        B --> C[划分Pipeline]
+        C --> D[创建Pipeline任务]
+        D --> E[调度Pipeline执行]
+    </div>
+
+    <p>Pipeline构建过程：</p>
+    <ol>
+        <li>BE接收FragmentInstance，包含物理算子树</li>
+        <li>将物理算子树转换为Pipeline执行计划</li>
+        <li>在阻塞点（如聚合、排序）处划分Pipeline</li>
+        <li>为每个Pipeline创建执行任务</li>
+        <li>将任务提交到执行引擎</li>
+    </ol>
+
+    <p>Pipeline的优势：</p>
+    <ul>
+        <li>减少中间结果的物化，降低内存使用</li>
+        <li>提高CPU缓存利用率</li>
+        <li>减少线程切换开销</li>
+        <li>支持向量化执行</li>
+    </ul>
+
+    <h2>10. BE执行Pipeline</h2>
+    <p>BE节点使用Pipeline执行模型处理数据，实现高效的查询执行。</p>
+
+    <div class="mermaid">
+    flowchart LR
+        A[数据源] --> B[算子1]
+        B --> C[算子2]
+        C --> D[算子3]
+        D --> E[数据接收器]
+        F[Pipeline执行器] --> A
+    </div>
+
+    <p>Pipeline执行过程：</p>
+    <ol>
+        <li>执行引擎调度Pipeline任务</li>
+        <li>数据源算子读取数据（如从存储引擎读取）</li>
+        <li>数据以批（Batch）为单位在Pipeline中流动</li>
+        <li>每个算子对数据进行处理，然后传递给下一个算子</li>
+        <li>最终结果发送到数据接收器（可能是另一个Pipeline或结果收集器）</li>
+    </ol>
+
+    <h3>10.1 向量化执行</h3>
+    <p>StarRocks采用向量化执行技术，一次处理多行数据，提高CPU缓存利用率和指令级并行度。</p>
+
+    <div class="mermaid">
+    flowchart LR
+        subgraph 传统执行模型
+            A1[行1] --> B1[算子1]
+            B1 --> C1[算子2]
+            C1 --> D1[算子3]
+            D1 --> E1[结果1]
+            F1[行2] --> G1[算子1]
+            G1 --> H1[算子2]
+            H1 --> I1[算子3]
+            I1 --> J1[结果2]
+        end
+        subgraph 向量化执行模型
+            A2[批处理多行] --> B2[算子1]
+            B2 --> C2[算子2]
+            C2 --> D2[算子3]
+            D2 --> E2[批处理结果]
+        end
+    </div>

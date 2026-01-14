@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarRocks架构与机制详解</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3, h4 {
+            color: #1a73e8;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .mermaid {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .note {
+            background-color: #e8f0fe;
+            border-left: 4px solid #1a73e8;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .warning {
+            background-color: #fef8e8;
+            border-left: 4px solid #fbbc04;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>StarRocks架构与机制详解</h1>
+
+    <h2>目录</h2>
+    <ol>
+        <li><a href="#fe-be">FE与BE模块启动路径与工作原理</a>
+            <ul>
+                <li><a href="#fe">FE (Frontend) 模块</a></li>
+                <li><a href="#be">BE (Backend) 模块</a></li>
+            </ul>
+        </li>
+        <li><a href="#architecture">StarRocks架构</a>
+            <ul>
+                <li><a href="#shared-nothing">存算一体架构</a></li>
+                <li><a href="#shared-data">存算分离架构</a></li>
+            </ul>
+        </li>
+        <li><a href="#data-model">数据模型</a>
+            <ul>
+                <li><a href="#table">表 (Table)</a></li>
+                <li><a href="#partition">分区 (Partition)</a></li>
+                <li><a href="#bucket">分桶 (Bucket)</a></li>
+                <li><a href="#tablet">Tablet</a></li>
+                <li><a href="#relationship">各概念之间的关系</a></li>
+            </ul>
+        </li>
+        <li><a href="#data-flow">数据读写流程</a>
+            <ul>
+                <li><a href="#write-flow">数据写入流程</a></li>
+                <li><a href="#read-flow">数据读取流程</a></li>
+                <li><a href="#optimization">使用和优化方式</a></li>
+            </ul>
+        </li>
+        <li><a href="#spill">Spill Disk机制</a>
+            <ul>
+                <li><a href="#spill-principle">工作原理</a></li>
+                <li><a href="#spill-trigger">触发条件</a></li>
+                <li><a href="#spill-cleanup">清理机制</a></li>
+                <li><a href="#spill-limit">限制</a></li>
+                <li><a href="#spill-pros-cons">优劣势</a></li>
+            </ul>
+        </li>
+        <li><a href="#cache">Cache机制</a>
+            <ul>
+                <li><a href="#file-cache">File Cache</a></li>
+                <li><a href="#data-cache">Data Cache</a></li>
+                <li><a href="#cache-read">数据读入Cache条件</a></li>
+                <li><a href="#cache-write">数据写入Cache条件</a></li>
+                <li><a href="#cache-order">读取Cache顺序</a></li>
+                <li><a href="#cache-cleanup">清理条件</a></li>
+                <li><a href="#cache-limit">限制</a></li>
+                <li><a href="#cache-disk-full">磁盘满处理</a></li>
+                <li><a href="#cache-pros-cons">优劣势</a></li>
+            </ul>
+        </li>
+    </ol>
+
+    <h2 id="fe-be">1. FE与BE模块启动路径与工作原理</h2>
+
+    <h3 id="fe">1.1 FE (Frontend) 模块</h3>
+    <p>FE模块是StarRocks的前端模块，使用Java语言开发，负责元数据管理、查询解析、查询规划和优化等工作。</p>
+
+    <h4>1.1.1 FE启动路径</h4>
+    <p>FE的启动流程从<code>bin/start_fe.sh</code>脚本开始，最终调用<code>StarRocksFE.java</code>的main方法。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[bin/start_fe.sh] --> B[加载环境变量]
+        B --> C[检查JAVA_HOME]
+        C --> D[设置JAVA_OPTS]
+        D --> E[启动Java进程]
+        E --> F[StarRocksFE.java的main方法]
+        F --> G[初始化Config]
+        G --> H[初始化GlobalStateMgr]
+        H --> I[启动StateChangeExecutor]
+        I --> J[等待GlobalStateMgr就绪]
+        J --> K[启动QeService]
+        K --> L[启动FeServer]
+        L --> M[启动HttpServer]
+    </div>
+
+    <p>主要启动步骤：</p>
+    <ol>
+        <li>加载环境变量和配置文件</li>
+        <li>检查Java版本和环境</li>
+        <li>初始化配置（Config）</li>
+        <li>初始化全局状态管理器（GlobalStateMgr）</li>
+        <li>启动状态变更执行器（StateChangeExecutor）</li>
+        <li>等待GlobalStateMgr就绪</li>
+        <li>启动查询执行服务（QeService）</li>
+        <li>启动FE服务器（FeServer）</li>
+        <li>启动HTTP服务器（HttpServer）</li>
+    </ol>
+
+    <h4>1.1.2 FE工作原理</h4>
+    <p>FE模块的主要组件和工作流程如下：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[客户端请求] --> B[MySQL协议层]
+        B --> C[请求处理]
+        C --> D{请求类型}
+        D -->|DDL| E[元数据操作]
+        D -->|DML| F[查询处理]
+        D -->|其他| G[其他操作]
+        E --> H[GlobalStateMgr]
+        F --> I[SQL解析]
+        I --> J[查询规划]
+        J --> K[查询优化]
+        K --> L[分发执行计划]
+        L --> M[BE执行]
+        H --> N[元数据持久化]
+        N --> O[Journal]
+    </div>
+
+    <p>FE的主要组件：</p>
+    <ul>
+        <li><strong>GlobalStateMgr</strong>：管理集群的全局状态和元数据</li>
+        <li><strong>QeService</strong>：处理MySQL协议请求，提供查询执行服务</li>
+        <li><strong>FeServer</strong>：提供Thrift RPC服务，用于FE和BE之间的通信</li>
+        <li><strong>HttpServer</strong>：提供HTTP服务，用于监控和管理</li>
+        <li><strong>Journal</strong>：负责元数据的持久化和复制</li>
+    </ul>
+
+    <p>FE的工作流程：</p>
+    <ol>
+        <li>接收客户端请求（通过MySQL协议）</li>
+        <li>解析SQL语句，生成抽象语法树（AST）</li>
+        <li>进行语义分析和权限检查</li>
+        <li>生成逻辑执行计划</li>
+        <li>优化执行计划（CBO优化）</li>
+        <li>生成物理执行计划</li>
+        <li>将执行计划分发到BE节点执行</li>
+        <li>收集执行结果并返回给客户端</li>
+    </ol>
+
+    <div class="mermaid">
+    sequenceDiagram
+        participant Client as 客户端
+        participant FE as Frontend
+        participant BE as Backend
+        
+        Client->>FE: 发送SQL查询
+        FE->>FE: 解析SQL
+        FE->>FE: 生成执行计划
+        FE->>FE: 优化执行计划
+        FE->>BE: 分发执行计划
+        BE->>BE: 执行查询
+        BE->>FE: 返回结果
+        FE->>Client: 返回结果
+    </div>
+
+    <h3 id="be">1.2 BE (Backend) 模块</h3>
+    <p>BE模块是StarRocks的后端模块，使用C++语言开发，负责数据存储和查询执行。</p>
+
+    <h4>1.2.1 BE启动路径</h4>
+    <p>BE的启动流程从<code>bin/start_be.sh</code>脚本开始，最终调用<code>starrocks_main.cpp</code>的main函数。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[bin/start_be.sh] --> B[加载环境变量]
+        B --> C[检查存储路径]
+        C --> D[启动C++进程]
+        D --> E[starrocks_main.cpp的main函数]
+        E --> F[解析命令行参数]
+        F --> G[初始化配置]
+        G --> H[初始化存储引擎]
+        H --> I[启动RPC服务]
+        I --> J[启动心跳服务]
+        J --> K[启动查询执行引擎]
+    </div>
+
+    <p>主要启动步骤：</p>
+    <ol>
+        <li>加载环境变量和配置文件</li>
+        <li>检查存储路径</li>
+        <li>初始化配置</li>
+        <li>初始化存储引擎（StorageEngine）</li>
+        <li>启动RPC服务</li>
+        <li>启动心跳服务</li>
+        <li>启动查询执行引擎</li>
+    </ol>
+
+    <h4>1.2.2 BE工作原理</h4>
+    <p>BE模块的主要组件和工作流程如下：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[FE请求] --> B[RPC服务]
+        B --> C{请求类型}
+        C -->|查询执行| D[查询执行引擎]
+        C -->|数据导入| E[数据导入]
+        C -->|心跳| F[心跳处理]
+        D --> G[Pipeline执行框架]
+        G --> H[算子执行]
+        H --> I[存储引擎]
+        E --> J[数据写入]
+        J --> K[存储引擎]
+        I --> L[返回结果]
+        K --> M[完成写入]
+    </div>
+
+    <p>BE的主要组件：</p>
+    <ul>
+        <li><strong>StorageEngine</strong>：管理数据存储，包括Tablet、Rowset等</li>
+        <li><strong>ExecEnv</strong>：提供执行环境，包括线程池、内存管理等</li>
+        <li><strong>PipelineExecutor</strong>：基于Pipeline的查询执行框架</li>
+        <li><strong>ThriftServer</strong>：提供Thrift RPC服务，用于接收FE的请求</li>
+        <li><strong>HeartbeatService</strong>：向FE发送心跳，报告BE状态</li>
+    </ul>
+
+    <p>BE的工作流程：</p>
+    <ol>
+        <li>接收FE的请求（通过Thrift RPC）</li>
+        <li>根据请求类型进行处理：
+            <ul>
+                <li>查询执行：构建Pipeline执行计划，执行查询</li>
+                <li>数据导入：接收数据，写入存储引擎</li>
+                <li>心跳：报告BE状态</li>
+            </ul>
+        </li>
+        <li>返回处理结果给FE</li>
+    </ol>
+
+    <div class="mermaid">
+    sequenceDiagram
+        participant FE as Frontend
+        participant BE as Backend
+        participant Storage as 存储引擎
+        
+        FE->>BE: 发送执行计划
+        BE->>BE: 构建Pipeline
+        BE->>Storage: 读取数据
+        Storage->>BE: 返回数据
+        BE->>BE: 执行计算
+        BE->>FE: 返回结果
+    </div>
+
+    <h2 id="architecture">2. StarRocks架构</h2>
+
+    <h3 id="shared-nothing">2.1 存算一体架构</h3>
+    <p>存算一体架构是StarRocks的传统架构，也称为Shared-Nothing架构，数据存储和计算在同一节点上进行。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[客户端] --> B[FE集群]
+        B --> C[BE节点1]
+        B --> D[BE节点2]
+        B --> E[BE节点3]
+        C --> F[存储1]
+        D --> G[存储2]
+        E --> H[存储3]
+        
+        subgraph "BE节点1"
+            F
+            I[计算1]
+        end
+        
+        subgraph "BE节点2"
+            G
+            J[计算2]
+        end
+        
+        subgraph "BE节点3"
+            H
+            K[计算3]
+        end
+    </div>
+
+    <p>存算一体架构的特点：</p>
+    <ul>
+        <li>数据和计算位于同一节点，减少网络传输</li>
+        <li>计算资源和存储资源紧密耦合</li>
+        <li>扩展时需要同时扩展计算和存储</li>
+        <li>适合计算密集型和存储密集型场景</li>
+    </ul>
+
+    <h3 id="shared-data">2.2 存算分离架构</h3>
+    <p>存算分离架构是StarRocks 2.0引入的新架构，也称为Shared-Data架构，将数据存储和计算分离。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[客户端] --> B[FE集群]
+        B --> C[CN节点1]
+        B --> D[CN节点2]
+        B --> E[CN节点3]
+        C --> F[对象存储]
+        D --> F
+        E --> F
+        
+        subgraph "CN节点1"
+            G[计算1]
+            H[本地缓存1]
+        end
+        
+        subgraph "CN节点2"
+            I[计算2]
+            J[本地缓存2]
+        end
+        
+        subgraph "CN节点3"
+            K[计算3]
+            L[本地缓存3]
+        end
+    </div>
+
+    <p>存算分离架构的特点：</p>
+    <ul>
+        <li>数据存储在对象存储（如S3、HDFS）中，计算节点（CN）负责计算</li>
+        <li>计算资源和存储资源解耦</li>
+        <li>可以独立扩展计算和存储</li>
+        <li>计算节点可以弹性伸缩</li>
+        <li>适合计算和存储需求不平衡的场景</li>
+        <li>支持本地缓存，提高查询性能</li>
+    </ul>
+
+    <h2 id="data-model">3. 数据模型</h2>
+
+    <h3 id="table">3.1 表 (Table)</h3>
+    <p>表是StarRocks中最基本的数据组织单位，用于存储结构化数据。</p>
+    <p>StarRocks支持多种表类型：</p>
+    <ul>
+        <li><strong>Duplicate Key表</strong>：支持数据更新，适合有主键的场景</li>
+        <li><strong>Aggregate Key表</strong>：支持预聚合，适合分析场景</li>
+        <li><strong>Unique Key表</strong>：支持唯一键约束，适合维度表</li>
+        <li><strong>Primary Key表</strong>：支持主键约束和行级更新，适合OLTP场景</li>
+        <li><strong>外部表</strong>：访问外部数据源，如Hive、MySQL等</li>
+    </ul>
+
+    <h3 id="partition">3.2 分区 (Partition)</h3>
+    <p>分区是表的逻辑划分，用于提高查询性能和管理数据生命周期。</p>
+    <p>StarRocks支持多种分区策略：</p>
+    <ul>
+        <li><strong>Range分区</strong>：按照值范围分区，如按日期分区</li>
+        <li><strong>List分区</strong>：按照值列表分区，如按地区分区</li>
+    </ul>
+    <p>分区的优势：</p>
+    <ul>
+        <li>提高查询性能：通过分区裁剪减少扫描数据量</li>
+        <li>简化数据管理：可以按分区进行数据生命周期管理</li>
+        <li>提高导入性能：可以并行导入不同分区</li>
+    </ul>
+
+    <h3 id="bucket">3.3 分桶 (Bucket)</h3>
+    <p>分桶是分区内的进一步划分，用于数据分布和并行处理。</p>
+    <p>StarRocks使用Hash分桶策略，根据指定的分桶列计算哈希值，将数据分布到不同的桶中。</p>
+    <p>分桶的优势：</p>
+    <ul>
+        <li>提高并行度：多个桶可以并行处理</li>
+        <li>均衡数据分布：避免数据倾斜</li>
+        <li>提高查询性能：通过分桶裁剪减少扫描数据量</li>
+    </ul>
+
+    <h3 id="tablet">3.4 Tablet</h3>
+    <p>Tablet是StarRocks中的数据存储单元，对应一个分区内的一个分桶。</p>
+    <p>Tablet的特点：</p>
+    <ul>
+        <li>是数据存储和复制的基本单位</li>
+        <li>包含多个Rowset，每个Rowset包含多个Segment</li>
+        <li>支持版本管理和并发控制</li>
+        <li>支持数据压缩和编码</li>
+    </ul>
+
+    <h3 id="relationship">3.5 各概念之间的关系</h3>
+    <p>表、分区、分桶和Tablet之间的关系如下：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[表 Table] --> B[分区1 Partition]
+        A --> C[分区2 Partition]
+        A --> D[分区3 Partition]
+        B --> E[分桶1 Bucket]
+        B --> F[分桶2 Bucket]
+        B --> G[分桶3 Bucket]
+        C --> H[分桶1 Bucket]
+        C --> I[分桶2 Bucket]
+        C --> J[分桶3 Bucket]
+        D --> K[分桶1 Bucket]
+        D --> L[分桶2 Bucket]
+        D --> M[分桶3 Bucket]
+        E --> N[Tablet]
+        F --> O[Tablet]
+        G --> P[Tablet]
+        H --> Q[Tablet]
+        I --> R[Tablet]
+        J --> S[Tablet]
+        K --> T[Tablet]
+        L --> U[Tablet]
+        M --> V[Tablet]
+        N --> W[Rowset]
+        W --> X[Segment]
+    </div>
+
+    <p>关系说明：</p>
+    <ul>
+        <li>一个表可以有多个分区</li>
+        <li>一个分区可以有多个分桶</li>
+        <li>一个分桶对应一个Tablet</li>
+        <li>一个Tablet包含多个Rowset</li>
+        <li>一个Rowset包含多个Segment</li>
+    </ul>
+
+    <h2 id="data-flow">4. 数据读写流程</h2>
+
+    <h3 id="write-flow">4.1 数据写入流程</h3>
+    <p>StarRocks支持多种数据导入方式，包括Stream Load、Broker Load、Routine Load等。以Stream Load为例，数据写入流程如下：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[客户端] --> B[FE]
+        B --> C[协调BE]
+        C --> D[数据解析]
+        D --> E[分区分桶]
+        E --> F[写入Tablet]
+        F --> G[生成Rowset]
+        G --> H[提交事务]
+        H --> I[返回结果]
+    </div>
+
+    <p>数据写入步骤：</p>
+    <ol>
+        <li>客户端发送导入请求到FE</li>
+        <li>FE选择一个BE作为协调节点</li>
+        <li>协调BE接收数据并进行解析</li>
+        <li>根据分区和分桶规则分发数据</li>
+        <li>各BE节点将数据写入对应的Tablet</li>
+        <li>生成新的Rowset</li>
+        <li>提交事务，更新元数据</li>
+        <li>返回导入结果</li>
+    </ol>
+
+    <h3 id="read-flow">4.2 数据读取流程</h3>
+    <p>StarRocks的数据读取流程如下：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[客户端] --> B[FE]
+        B --> C[SQL解析]
+        C --> D[查询规划]
+        D --> E[查询优化]
+        E --> F[分发执行计划]
+        F --> G[BE1执行]
+        F --> H[BE2执行]
+        F --> I[BE3执行]
+        G --> J[扫描Tablet]
+        H --> K[扫描Tablet]
+        I --> L[扫描Tablet]
+        J --> M[结果汇总]
+        K --> M
+        L --> M
+        M --> N[返回结果]
+    </div>
+
+    <p>数据读取步骤：</p>
+    <ol>
+        <li>客户端发送SQL查询到FE</li>
+        <li>FE解析SQL，生成执行计划</li>
+        <li>FE优化执行计划，进行分区裁剪和分桶裁剪</li>
+        <li>FE将执行计划分发到相关BE节点</li>
+        <li>BE节点执行计划，扫描相关Tablet</li>
+        <li>BE节点进行数据处理（过滤、聚合等）</li>
+        <li>结果汇总并返回给客户端</li>
+    </ol>
+
+    <h3 id="optimization">4.3 使用和优化方式</h3>
+    <p>StarRocks提供了多种优化方式，提高数据读写性能：</p>
+
+    <h4>4.3.1 写入优化</h4>
+    <ul>
+        <li><strong>批量导入</strong>：使用批量导入而不是单条插入</li>
+        <li><strong>合理的分区策略</strong>：根据业务特点选择合适的分区键</li>
+        <li><strong>合理的分桶数量</strong>：根据数据量和并行度选择合适的分桶数</li>
+        <li><strong>预排序数据</strong>：导入前对数据进行预排序，提高写入效率</li>
+        <li><strong>并行导入</strong>：多个导入任务并行执行</li>
+    </ul>
+
+    <h4>4.3.2 读取优化</h4>
+    <ul>
+        <li><strong>合理的表模型</strong>：根据查询特点选择合适的表模型</li>
+        <li><strong>物化视图</strong>：创建物化视图，预计算常用查询</li>
+        <li><strong>分区裁剪</strong>：使用分区键作为查询条件</li>
+        <li><strong>分桶裁剪</strong>：使用分桶键作为查询条件</li>
+        <li><strong>索引</strong>：创建适当的索引，如Bitmap索引、Bloom过滤器等</li>
+        <li><strong>列存优化</strong>：合理设置列的顺序，常用列放在前面</li>
+        <li><strong>缓存优化</strong>：利用查询缓存和数据缓存</li>
+    </ul>
+
+    <h2 id="spill">5. Spill Disk机制</h2>
+
+    <h3 id="spill-principle">5.1 工作原理</h3>
+    <p>Spill Disk是StarRocks在内存不足时将中间结果溢写到磁盘的机制，用于处理大数据量查询。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[查询执行] --> B{内存是否足够}
+        B -->|是| C[内存中处理]
+        B -->|否| D[溢写到磁盘]
+        D --> E[分批处理]
+        E --> F[合并结果]
+        C --> G[返回结果]
+        F --> G
+    </div>
+
+    <p>Spill Disk的工作流程：</p>
+    <ol>
+        <li>查询执行过程中监控内存使用情况</li>
+        <li>当内存使用接近阈值时，触发溢写操作</li>
+        <li>将部分中间结果写入磁盘</li>
+        <li>分批处理数据，每次只加载部分数据到内存</li>
+        <li>处理完成后合并结果</li>
+    </ol>
+
+    <h3 id="spill-trigger">5.2 触发条件</h3>
+    <p>Spill Disk的触发条件包括：</p>
+    <ul>
+        <li>查询内存使用量超过<code>query_mem_limit</code>设置</li>
+        <li>系统内存压力大，接近<code>mem_limit</code>设置</li>
+        <li>特定算子（如排序、聚合、连接）的内存使用量超过阈值</li>
+    </ul>
+
+    <h3 id="spill-cleanup">5.3 清理机制</h3>
+    <p>Spill Disk

@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iData Qualitis Task - 数据质量检查引擎</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            color: white;
+            padding: 40px 20px;
+        }
+        
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            color: #333;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .card h2 .icon {
+            font-size: 1.8rem;
+        }
+        
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+        
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        
+        .feature-item {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .feature-item h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+        
+        .feature-item p {
+            color: #666;
+            line-height: 1.6;
+            font-size: 0.95rem;
+        }
+        
+        .value-item {
+            text-align: center;
+            padding: 30px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+        }
+        
+        .value-item .number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .value-item .label {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        
+        /* 流程图样式 */
+        .flowchart {
+            padding: 20px 0;
+        }
+        
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+        
+        .flow-section {
+            margin-bottom: 30px;
+        }
+        
+        .flow-section-title {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px 8px 0 0;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        
+        .flow-steps {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 0 0 8px 8px;
+            border: 2px solid #e9ecef;
+            border-top: none;
+        }
+        
+        .flow-step {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+            min-width: 140px;
+            border: 2px solid #667eea;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .flow-step:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .flow-step.highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
+        }
+        
+        .flow-step .step-icon {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+        }
+        
+        .flow-step .step-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .flow-step .step-desc {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .flow-step.highlight .step-desc {
+            color: rgba(255,255,255,0.8);
+        }
+        
+        .flow-arrow {
+            color: #667eea;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .flow-arrow-down {
+            display: flex;
+            justify-content: center;
+            padding: 10px 0;
+            color: #667eea;
+            font-size: 2rem;
+        }
+        
+        /* 架构图样式 */
+        .architecture {
+            padding: 20px 0;
+        }
+        
+        .arch-layer {
+            margin-bottom: 20px;
+        }
+        
+        .arch-layer-title {
+            background: #333;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px 6px 0 0;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        
+        .arch-layer-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 0 0 6px 6px;
+            border: 1px solid #dee2e6;
+            border-top: none;
+        }
+        
+        .arch-box {
+            flex: 1;
+            min-width: 150px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            border: 1px solid #e9ecef;
+        }
+        
+        .arch-box.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+        
+        .arch-box.secondary {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border: none;
+        }
+        
+        .arch-box.warning {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border: none;
+        }
+        
+        .arch-box h4 {
+            font-size: 0.95rem;
+            margin-bottom: 5px;
+        }
+        
+        .arch-box p {
+            font-size: 0.8rem;
+            opacity: 0.85;
+        }
+        
+        /* 注意事项样式 */
+        .notice-list {
+            list-style: none;
+        }
+        
+        .notice-list li {
+            padding: 15px 20px;
+            margin-bottom: 12px;
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            border-radius: 0 8px 8px 0;
+            color: #856404;
+            line-height: 1.6;
+        }
+        
+        .notice-list li.danger {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        
+        .notice-list li.info {
+            background: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+        
+        .notice-list li.success {
+            background: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        
+        .notice-list li strong {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 1rem;
+        }
+        
+        /* 场景卡片 */
+        .scenario-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .scenario-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .scenario-header {
+            padding: 20px;
+            color: white;
+            text-align: center;
+        }
+        
+        .scenario-header.s1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .scenario-header.s2 { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .scenario-header.s3 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .scenario-header.s4 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .scenario-header.s5 { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+        .scenario-header.s6 { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333; }
+        
+        .scenario-header h3 {
+            font-size: 1.2rem;
+            margin-bottom: 5px;
+        }
+        
+        .scenario-header .icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        
+        .scenario-body {
+            padding: 20px;
+        }
+        
+        .scenario-body p {
+            color: #666;
+            line-height: 1.6;
+            font-size: 0.9rem;
+        }
+        
+        .scenario-body ul {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+        
+        .scenario-body ul li {
+            color: #555;
+            margin-bottom: 5px;
+            font-size: 0.85rem;
+        }
+        
+        /* 代码块样式 */
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+        
+        .code-block .comment {
+            color: #68d391;
+        }
+        
+        .code-block .keyword {
+            color: #f687b3;
+        }
+        
+        .code-block .method {
+            color: #63b3ed;
+        }
+        
+        .code-block .class {
+            color: #fbd38d;
+        }
+        
+        /* 表格样式 */
+        .table-wrapper {
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        /* 响应式 */
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .flow-steps {
+                flex-direction: column;
+            }
+            
+            .flow-arrow {
+                transform: rotate(90deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>iData Qualitis Task</h1>
+            <p>企业级数据质量检查引擎 - 保障数据资产质量的核心组件</p>
+        </header>
+
+        <!-- 项目价值 -->
+        <div class="card">
+            <h2><span class="icon">💎</span>项目价值</h2>
+            <div class="grid-2">
+                <div class="grid-3">
+                    <div class="value-item">
+                        <div class="number">7×24</div>
+                        <div class="label">全天候质量监控</div>
+                    </div>
+                    <div class="value-item">
+                        <div class="number">100%</div>
+                        <div class="label">规则自动化执行</div>
+                    </div>
+                    <div class="value-item">
+                        <div class="number">秒级</div>
+                        <div class="label">问题实时告警</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="feature-item" style="margin-bottom: 15px;">
+                        <h3>数据质量保障</h3>
+                        <p>通过配置化的质量规则，对数据进行全方位检查，确保数据准确性、完整性、一致性和时效性，为业务决策提供可靠的数据基础。</p>
+                    </div>
+                    <div class="feature-item" style="margin-bottom: 15px;">
+                        <h3>业务流程熔断</h3>
+                        <p>支持任务前后置熔断机制，当数据质量不达标时自动阻断下游任务执行，避免脏数据污染整个数据链路，保护数据资产安全。</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>问题快速定位</h3>
+                        <p>问题数据自动落地存储，配合多渠道告警通知（企微、邮件、工单等），帮助数据团队快速定位和修复数据问题。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 产品特性 -->
+        <div class="card">
+            <h2><span class="icon">🚀</span>产品特性 - 能做什么</h2>
+            <div class="grid-3">
+                <div class="feature-item">
+                    <h3>📋 规则配置化</h3>
+                    <p>支持通过前端界面配置质量检查规则，包括单表校验、跨表对比、自定义SQL等多种规则类型，无需编码即可实现复杂的数据校验逻辑。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>🔌 多数据源支持</h3>
+                    <p>支持MySQL、PostgreSQL、StarRocks、Hive等主流数据源，通过JDBC统一接入，满足企业异构数据环境的质量检查需求。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>⚡ 双入口模式</h3>
+                    <p>支持熔断规则（任务前后置调用）和报告规则（独立调度执行）两种运行模式，灵活适配不同业务场景。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>🔄 参数动态替换</h3>
+                    <p>支持运行时参数动态替换，如业务日期 $[yyyy-MM-dd]、调度时间等，实现规则的灵活复用。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>📊 问题数据落地</h3>
+                    <p>检查不通过时自动执行问题数据SQL，将问题数据落地到指定数据源，便于后续分析和修复。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>🔔 多渠道告警</h3>
+                    <p>支持企业微信机器人、邮件、工单、微信消息等多种告警方式，告警内容可通过模板自定义配置。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>📈 结果可视化</h3>
+                    <p>检查结果自动回传并存储，支持报表展示、趋势分析，帮助管理者全面掌握数据质量状况。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>🔒 安全认证</h3>
+                    <p>集成KMS密钥管理服务，支持数据源密码加密存储和动态获取，保障数据访问安全。</p>
+                </div>
+                <div class="feature-item">
+                    <h3>🔁 失败重试</h3>
+                    <p>内置回调重试机制，确保检查结果可靠回传，避免因网络抖动导致的结果丢失。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 执行流程图 -->
+        <div class="card">
+            <h2><span class="icon">📊</span>执行流程图</h2>
+            <div class="flowchart">
+                <!-- 入口选择 -->
+                <div class="flow-section">
+                    <div class="flow-section-title">Step 1: 程序入口</div>
+                    <div class="flow-steps">
+                        <div class="flow-step highlight">
+                            <div class="step-icon">🚪</div>
+                            <div class="step-name">入口一: QaMain.exec()</div>
+                            <div class="step-desc">熔断规则 - 任务前后置调用</div>
+                        </div>
+                        <div class="flow-arrow">|</div>
+                        <div class="flow-step highlight">
+                            <div class="step-icon">🚪</div>
+                            <div class="step-name">入口二: QaMain.main()</div>
+                            <div class="step-desc">报告规则 - 独立调度执行</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow-down">⬇</div>
+
+                <!-- 参数解析 -->
+                <div class="flow-section">
+                    <div class="flow-section-title">Step 2: 参数解析与配置获取</div>
+                    <div class="flow-steps">
+                        <div class="flow-step">
+                            <div class="step-icon">🔑</div>
+                            <div class="step-name">参数解密</div>
+                            <div class="step-desc">AES解密运行参数</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-icon">📥</div>
+                            <div class="step-name">获取规则配置</div>
+                            <div class="step-desc">RuleContext初始化</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-icon">✅</div>
+                            <div class="step-name">配置检查</div>
+                            <div class="step-desc">checkRunInfo验证</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow-down">⬇</div>
+
+                <!-- 引擎构建 -->
+                <div class="flow-section">
+                    <div class="flow-section-title">Step 3: 引擎构建</div>
+                    <div class="flow-steps">
+                        <div class="flow-step">
+                            <div class="step-icon">🏭</div>
+                            <div class="step-name">EngineFactory</div>
+                            <div class="step-desc">工厂模式创建引擎</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step highlight">
+                            <div class="step-icon">🔧</div>
+                            <div class="step-name">JdbcEngine</div>
+                            <div class="step-desc">单数据源检查</div>
+                        </div>
+                        <div class="flow-arrow">|</div>
+                        <div class="flow-step highlight">
+                            <div class="step-icon">⚡</div>
+                            <div class="step-name">FlinkEngine</div>
+                            <div class="step-desc">跨数据源对比</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow-down">⬇</div>
+
+                <!-- 生命周期执行 -->
+                <div class="flow-section">
+                    <div class="flow-section-title">Step 4: 引擎生命周期执行</div>
+                    <div class="flow-steps">
+                        <div class="flow-step">
+                            <div class="step-icon">🔌</div>
+                            <div class="step-name">init()</div>
+                            <div class="step-desc">数据源连接初始化</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-icon">🔄</div>
+                            <div class="step-name">before()</div>
+                            <div class="step-desc">参数替换/SQL构建</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step highlight">
+                            <div class="step-icon">▶️</div>
+                            <div class="step-name">run()</div>
+                            <div class="step-desc">执行检查SQL</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-icon">🔚</div>
+                            <div class="step-name">close()</div>
+                            <div class="step-desc">资源释放/结果回调</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-arrow-down">⬇</div>
+
+                <!-- 结果处理 -->
+                <div class="flow-section">
+                    <div class="flow-section-title">Step 5: 结果处理与告警</div>
+                    <div class="flow-steps">
+                        <div class="flow-step">
+                            <div class="step-icon">💾</div>
+                            <div class="step-name">saveIssue()</div>
+                            <div class="step-desc">问题数据落地</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-icon">📤</div>
+                            <div class="step-name">callBackReport()</div>
+                            <div class="step-desc">回调API接口</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step highlight">
+                            <div class="step-icon">📨</div>
+                            <div class="step-name">handleRunResult()</div>
+                            <div class="step-desc">结果存储/告警触发</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统架构图 -->
+        <div class="card">
+            <h2><span class="icon">🏗️</span>系统架构原理图</h2>
+            <div class="architecture">
+                <!-- 调用层 -->
+                <div class="arch-layer">
+                    <div class="arch-layer-title">调用层 - Caller Layer</div>
+                    <div class="arch-layer-content">
+                        <div class="arch-box primary">
+                            <h4>DolphinScheduler</h4>
+                            <p>任务调度平台</p>
+                        </div>
+                        <div class="arch-box primary">
+                            <h4>前后置Hook</h4>
+                            <p>熔断规则触发</p>
+                        </div>
+                        <div class="arch-box primary">
+                            <h4>手动执行</h4>
+                            <p>报告规则触发</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 入口层 -->
+                <div class="arch-layer">
+                    <div class="arch-layer-title">入口层 - Entry Layer</div>
+                    <div class="arch-layer-content">
+                        <div class="arch-box secondary">
+                            <h4>QaMain</h4>
+                            <p>程序入口类</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>main()</h4>
+                            <p>报告类规则入口</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>exec()</h4>
+                            <p>熔断类规则入口</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 上下文层 -->
+                <div class="arch-layer">
+                    <div class="arch-layer-title">上下文层 - Context Layer</div>
+                    <div class="arch-layer-content">
+                        <div class="arch-box">
+                            <h4>RuleContext</h4>
+                            <p>规则运行上下文</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>RunRule</h4>
+                            <p>规则配置信息</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>RuleRunResult</h4>
+                            <p>规则运行结果</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 引擎层 -->
+                <div class="arch-layer">
+                    <div class="arch-layer-title">引擎层 - Engine Layer (工厂模式)</div>
+                    <div class="arch-layer-content">
+                        <div class="arch-box warning">
+                            <h4>EngineFactory</h4>
+                            <p>引擎工厂抽象类</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>JdbcEngineFactory</h4>
+                            <p>JDBC引擎工厂</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>FlinkEngineFactory</h4>
+                            <p>Flink引擎工厂</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 执行引擎 -->
+                <div class="arch-layer">
+                    <div class="arch-layer-title">执行引擎 - Execution Engine</div>
+                    <div class="arch-layer-content">
+                        <div class="arch-box warning">
+                            <h4>Engine (抽象类)</h4>
+                            <p>init() | before() | run() | close()</p>
+                        </div>
+                        <div class="arch-box secondary">
+                            <h4>JdbcEngine</h4>
+                            <p>单数据源JDBC执行</p>
+                        </div>
+                        <div class="arch-box secondary">
+                            <h4>FlinkEngine</h4>
+                            <p>跨数据源Flink执行</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据源层 -->
+                <div class="arch-layer">
+                    <div class="arch-layer-title">数据源层 - DataSource Layer</div>
+                    <div class="arch-layer-content">
+                        <div class="arch-box">
+                            <h4>Connector</h4>
+                            <p>数据源连接器接口</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>JDBCConnector</h4>
+                            <p>通用JDBC连接器</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>StarRocksConnector</h4>
+                            <p>StarRocks专用连接器</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>KMS</h4>
+                            <p>密钥管理服务</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 回调层 -->
+                <div class="arch-layer">
+                    <div class="arch-layer-title">回调层 - Callback Layer (idata-qualitis-api)</div>
+                    <div class="arch-layer-content">
+                        <div class="arch-box primary">
+                            <h4>AcceptRunResultOuterController</h4>
+                            <p>外部回调接口</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>AcceptRunResultServiceImpl</h4>
+                            <p>结果处理服务</p>
+                        </div>
+                        <div class="arch-box">
+                            <h4>handleRunResult()</h4>
+                            <p>结果存储与告警</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 告警层 -->
+                <div class="arch-layer">
+                    <div class="arch-layer-title">告警层 - Alert Layer</div>
+                    <div class="arch-layer-content">
+                        <div class="arch-box secondary">
+                            <h4>企业微信机器人</h4>
+                            <p>Webhook推送</p>
+                        </div>
+                        <div class="arch-box secondary">
+                            <h4>邮件通知</h4>
+                            <p>SMTP发送</p>
+                        </div>
+                        <div class="arch-box secondary">
+                            <h4>工单系统</h4>
+                            <p>自动创建工单</p>
+                        </div>
+                        <div class="arch-box secondary">
+                            <h4>微信消息</h4>
+                            <p>消息推送</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 核心类说明 -->
+        <div class="card">
+            <h2><span class="icon">📝</span>核心类与方法说明</h2>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>类/方法</th>
+                            <th>所属模块</th>
+                            <th>功能说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>QaMain.main()</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>报告类规则入口，通过调度系统独立执行</td>
+                        </tr>
+                        <tr>
+                            <td><code>QaMain.exec()</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>熔断类规则入口，任务前后置Hook调用</td>
+                        </tr>
+                        <tr>
+                            <td><code>RuleContext</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>规则运行上下文，包含规则配置、运行参数、API地址等</td>
+                        </tr>
+                        <tr>
+                            <td><code>Engine.init()</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>初始化数据源连接、解析业务日期参数</td>
+                        </tr>
+                        <tr>
+                            <td><code>Engine.before()</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>参数替换、执行SQL构建（抽象方法）</td>
+                        </tr>
+                        <tr>
+                            <td><code>Engine.run()</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>执行检查SQL、比对阈值、生成检查结果（抽象方法）</td>
+                        </tr>
+                        <tr>
+                            <td><code>Engine.close()</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>问题数据落地、关闭连接、回调结果</td>
+                        </tr>
+                        <tr>
+                            <td><code>Engine.saveIssue()</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>执行问题数据SQL并落地到指定数据源</td>
+                        </tr>
+                        <tr>
+                            <td><code>Engine.callBackReport()</code></td>
+                            <td>idata-qualitis-task</td>
+                            <td>将运行结果回调给质量应用端API</td>
+                        </tr>
+                        <tr>
+                            <td><code>handleRunResult()</code></td>
+                            <td>idata-qualitis-api</td>
+                            <td>接收回调结果、存储DB、触发告警</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <h3 style="margin-top: 30px; margin-bottom: 15px; color: #333;">代码示例 - 引擎生命周期调用</h3>
+            <div class="code-block">
+<span class="comment">// QaMain.exec() 中的引擎调用流程</span>
+<span class="keyword">try</span> {
+    <span class="comment">// 1. 初始化规则上下文</span>
+    ruleContext = <span class="class">RuleContext</span>.<span class="method">getInstance</span>(ruleCode, ruleBizVersion, runParamsMapTmp, runUser, configPath);
+    
+    <span class="comment">// 2. 配置检查</span>
+    <span class="keyword">if</span> (!<span class="method">checkRunInfo</span>(ruleContext.getRunRule())) {
+        <span class="keyword">throw new</span> <span class="class">QualitisException</span>(<span class="class">ErrorCode</span>.CONFIG_ERROR, <span class="string">"运行参数配置检查失败"</span>);
+    }
+    
+    <span class="comment">// 3. 根据引擎类型创建对应引擎</span>
+    <span class="class">EngineFactory</span> engineFactory = <span class="keyword">null</span>;
+    <span class="keyword">switch</span> (ruleContext.getRunRule().getRuleBaseLog().<span class="method">getEngineTypeEnum</span>()) {
+        <span class="keyword">case</span> JDBC:
+        <span class="keyword">default</span>:
+            engineFactory = <span class="keyword">new</span> <span class="class">JdbcEngineFactory</span>();
+    }
+    engine = engineFactory.<span class="method">createEngine</span>(ruleContext);
+    
+    <span class="comment">// 4. 执行引擎生命周期方法</span>
+    engine.<span class="method">init</span>();    <span class="comment">// 数据源连接初始化</span>
+    engine.<span class="method">before</span>();  <span class="comment">// 参数替换、SQL构建</span>
+    engine.<span class="method">run</span>();     <span class="comment">// 执行检查</span>
+} <span class="keyword">finally</span> {
+    engine.<span class="method">close</span>();   <span class="comment">// 问题数据落地、结果回调、资源释放</span>
+}
+            </div>
+        </div>
+
+        <!-- 使用注意事项 -->
+        <div class="card">
+            <h2><span class="icon">⚠️</span>使用引擎的注意事项</h2>
+            <ul class="notice-list">
+                <li class="danger">
+                    <strong>数据源权限配置</strong>
+                    执行前需确保数据源已在DAP平台注册，且执行用户具有相应的访问权限。KMS密钥需提前配置好namespace权限。
+                </li>
+                <li class="danger">
+                    <strong>熔断规则影响范围</strong>
+                    熔断类规则检查不通过时会阻断下游任务执行，配置前需充分评估对业务的影响，建议先在测试环境验证。
+                </li>
+                <li class="warning">
+                    <strong>参数格式规范</strong>
+                    运行参数需使用AES加密传递，业务日期参数格式如 $[yyyy-MM-dd] 需与SQL中的占位符保持一致。
+                </li>
+                <li class="warning">
+                    <strong>问题数据落地表</strong>
+                    开启问题数据落地时，需确保问题数据SQL正确、落地数据源可访问、目标表结构与查询结果匹配。
+                </li>
+                <li class="info">
+                    <strong>告警配置完整性</strong>
+                    启用告警功能时需配置完整的告警模板、接收人、机器人等信息，否则可能导致告警发送失败。
+                </li>
+                <li class="info">
+                    <strong>SQL语法兼容性</strong>
+                    不同数据源的SQL语法存在差异，编写检查SQL时需注意目标数据源的语法特性，避免执行失败。
+                </li>
+                <li class="success">
+                    <strong>回调重试机制</strong>
+                    引擎内置3次回调重试机制，间隔10秒，确保检查结果可靠回传。如仍失败会抛出异常。
+                </li>
+                <li class="success">
+                    <strong>规则版本管理</strong>
+                    规则支持版本管理（bizVersion），修改规则配置后需发布新版本，历史运行结果与对应版本关联。
+                </li>
+            </ul>
+        </div>
+
+        <!-- 适合场景 -->
+        <div class="card">
+            <h2><span class="icon">🎯</span>适合场景</h2>
+            <div class="grid-3">
+                <div class="scenario-card">
+                    <div class="scenario-header s1">
+                        <div class="icon">🔄</div>
+                        <h3>ETL数据质量监控</h3>
+                    </div>
+                    <div class="scenario-body">
+                        <p>在数据仓库ETL流程中，对抽取、转换、加载各阶段的数据进行质量检查。</p>
+                        <ul>
+                            <li>源表与目标表数据量一致性校验</li>
+                            <li>关键字段空值率检查</li>
+                            <li>数据类型转换正确性验证</li>
+                            <li>增量数据完整性检查</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card">
+                    <div class="scenario-header s2">
+                        <div class="icon">🛡️</div>
+                        <h3>任务熔断保护</h3>
+                    </div>
+                    <div class="scenario-body">
+                        <p>作为调度任务的前后置检查，在数据异常时自动阻断任务执行。</p>
+                        <ul>
+                            <li>上游数据就绪检查</li>
+                            <li>关键指标阈值校验</li>
+                            <li>数据时效性检查</li>
+                            <li>防止脏数据污染下游</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card">
+                    <div class="scenario-header s3">
+                        <div class="icon">📊</div>
+                        <h3>数据质量报告</h3>
+                    </div>
+                    <div class="scenario-body">
+                        <p>定期生成数据质量报告，帮助数据团队了解数据健康状况。</p>
+                        <ul>
+                            <li>日/周/月质量趋势分析</li>
+                            <li>问题数据统计汇总</li>
+                            <li>质量规则执行情况</li>
+                            <li>数据治理效果评估</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card">
+                    <div class="scenario-header s4">
+                        <div class="icon">🔍</div>
+                        <h3>业务规则校验</h3>
+                    </div>
+                    <div class="scenario-body">
+                        <p>基于业务逻辑的数据校验，确保数据符合业务规则要求。</p>
+                        <ul>
+                            <li>订单金额合理性检查</li>
+                            <li>用户状态一致性校验</li>
+                            <li>业务指标波动监控</li>
+                            <li>跨系统数据一致性</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card">
+                    <div class="scenario-header s5">
+                        <div class="icon">⚡</div>
+                        <h3>实时数据监控</h3>
+                    </div>
+                    <div class="scenario-body">
+                        <p>对实时数据流进行质量监控，及时发现数据异常。</p>
+                        <ul>
+                            <li>数据延迟监控</li>
+                            <li>数据量波动告警</li>
+                            <li>异常值实时检测</li>
+                            <li>数据断流预警</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card">
+                    <div class="scenario-header s6">
+                        <div class="icon">🔗</div>
+                        <h3>跨源数据对比</h3>
+                    </div>
+                    <div class="scenario-body">
+                        <p>使用Flink引擎进行跨数据源的数据对比校验。</p>
+                        <ul>
+                            <li>主从库数据一致性</li>
+                            <li>多系统数据核对</li>
+                            <li>数据迁移验证</li>
+                            <li>备份数据完整性</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 支持的数据源 -->
+        <div class="card">
+            <h2><span class="icon">🗄️</span>支持的数据源类型</h2>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>数据源类型</th>
+                            <th>连接方式</th>
+                            <th>适用场景</th>
+                            <th>特殊说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>MySQL</td>
+                            <td>JDBC</td>
+                            <td>业务库、数据仓库</td>
+                            <td>支持5.x/8.x版本</td>
+                        </tr>
+                        <tr>
+                            <td>PostgreSQL</td>
+                            <td>JDBC</td>
+                            <td>业务库、分析库</td>
+                            <td>支持9.x及以上版本</td>
+                        </tr>
+                        <tr>
+                            <td>StarRocks</td>
+                            <td>专用Connector</td>
+                            <td>OLAP分析、实时数仓</td>
+                            <td>使用StarRocksConnector</td>
+                        </tr>
+                        <tr>
+                            <td>Hive</td>
+                            <td>JDBC</td>
+                            <td>离线数仓</td>
+                            <td>通过HiveServer2连接</td>
+                        </tr>
+                        <tr>
+                            <td>其他JDBC数据源</td>
+                            <td>JDBC</td>
+                            <td>通用场景</td>
+                            <td>需配置对应驱动</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <footer style="text-align: center; color: white; padding: 30px 20px; opacity: 0.9;">
+            <p>iData Qualitis Task - 数据质量检查引擎</p>
+            <p style="font-size: 0.9rem; margin-top: 10px;">© 2024 TME IT Data Team. All rights reserved.</p>
+        </footer>
+    </div>
+</body>
+</html>

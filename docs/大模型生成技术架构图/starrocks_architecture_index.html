@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarRocks架构与机制详解 - 索引</title>
+    <style>
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3, h4 {
+            color: #1a73e8;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        .card h2 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .card-content {
+            margin-top: 15px;
+        }
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .button {
+            display: inline-block;
+            background-color: #1a73e8;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            margin-top: 15px;
+            text-decoration: none;
+            transition: background-color 0.3s ease;
+        }
+        .button:hover {
+            background-color: #155db1;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>StarRocks架构与机制详解</h1>
+    
+    <p style="text-align: center; font-size: 1.2em;">本文档详细介绍了StarRocks的架构、工作原理和关键机制，帮助您深入理解StarRocks的内部实现。</p>
+    
+    <div class="card">
+        <h2>第一部分：基础架构与数据模型</h2>
+        <div class="card-content">
+            <p>本部分介绍StarRocks的基础架构、FE与BE模块的启动路径与工作原理、存算一体与存算分离架构、数据模型以及数据读写流程。</p>
+            <ul>
+                <li>FE (Frontend) 模块启动路径与工作原理</li>
+                <li>BE (Backend) 模块启动路径与工作原理</li>
+                <li>存算一体架构 (Shared-Nothing)</li>
+                <li>存算分离架构 (Shared-Data)</li>
+                <li>数据模型：表、分区、分桶、Tablet</li>
+                <li>数据读写流程与优化方式</li>
+            </ul>
+            <a href="starrocks_architecture_part1.html" class="button">阅读第一部分</a>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h2>第二部分：高级机制</h2>
+        <div class="card-content">
+            <p>本部分介绍StarRocks的高级机制，包括Spill Disk机制和Cache机制的工作原理、触发条件、限制和优劣势。</p>
+            <ul>
+                <li>Spill Disk机制工作原理</li>
+                <li>Spill Disk触发条件与清理机制</li>
+                <li>File Cache与Data Cache</li>
+                <li>Cache读写条件与顺序</li>
+                <li>Cache清理条件与磁盘满处理</li>
+                <li>各机制的优劣势分析</li>
+            </ul>
+            <a href="starrocks_architecture_part2.html" class="button">阅读第二部分</a>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h2>SQL执行流程详解</h2>
+        <div class="card-content">
+            <p>如果您对StarRocks的SQL执行流程感兴趣，我们还提供了一份详细的SQL执行流程文档，从客户端提交SQL到结果返回的全过程。</p>
+            <a href="starrocks_sql_execution_detailed_index.html" class="button">查看SQL执行流程</a>
+        </div>
+    </div>
+    
+    <footer style="text-align: center; margin-top: 50px; color: #666; font-size: 0.9em;">
+        <p>StarRocks架构与机制详解 © 2024</p>
+    </footer>
+</body>
+</html>

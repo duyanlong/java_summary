@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarRocks SQL执行流程详解（续）</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3, h4 {
+            color: #1a73e8;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .mermaid {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .note {
+            background-color: #e8f0fe;
+            border-left: 4px solid #1a73e8;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .warning {
+            background-color: #fef8e8;
+            border-left: 4px solid #fbbc04;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>StarRocks SQL执行流程详解（续）</h1>
+
+    <div class="mermaid">
+    flowchart LR
+        subgraph 向量化执行模型
+            A2[批处理多行] --> B2[算子1]
+            B2 --> C2[算子2]
+            C2 --> D2[算子3]
+            D2 --> E2[批处理结果]
+        end
+    </div>
+
+    <p>向量化执行的优势：</p>
+    <ul>
+        <li>减少函数调用开销</li>
+        <li>提高CPU缓存命中率</li>
+        <li>利用现代CPU的SIMD指令</li>
+        <li>减少分支预测失败</li>
+    </ul>
+
+    <h3>10.2 并行执行</h3>
+    <p>StarRocks利用多核CPU并行执行查询，提高资源利用率和查询性能。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[FragmentInstance] --> B[Pipeline 1]
+        A --> C[Pipeline 2]
+        A --> D[Pipeline 3]
+        B --> E[线程池]
+        C --> E
+        D --> E
+        E --> F[CPU核心1]
+        E --> G[CPU核心2]
+        E --> H[CPU核心3]
+        E --> I[CPU核心4]
+    </div>
+
+    <p>并行执行策略：</p>
+    <ul>
+        <li>多个Pipeline并行执行</li>
+        <li>单个Pipeline内的算子可以并行处理不同批次的数据</li>
+        <li>动态调整并行度，根据系统负载和资源情况</li>
+        <li>利用线程池管理执行线程，避免频繁创建和销毁线程</li>
+    </ul>
+
+    <h2>11. 结果汇总</h2>
+    <p>查询执行完成后，需要将各个BE节点的结果汇总并返回给客户端。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[BE1结果] --> D[结果汇总节点]
+        B[BE2结果] --> D
+        C[BE3结果] --> D
+        D --> E[结果处理]
+        E --> F[格式化]
+        F --> G[返回客户端]
+    </div>
+
+    <p>结果汇总过程：</p>
+    <ol>
+        <li>每个BE节点完成计算后，将结果发送到指定的汇总节点</li>
+        <li>汇总节点接收所有结果并合并</li>
+        <li>对结果进行最终处理，如排序、限制行数等</li>
+        <li>将结果格式化为MySQL协议格式</li>
+        <li>通过MySQL协议将结果返回给客户端</li>
+    </ol>
+
+    <h2>12. 完整执行流程示例</h2>
+    <p>下面通过一个具体的SQL查询示例，展示StarRocks的完整执行流程。</p>
+
+    <pre><code>SELECT 
+    c.customer_name, 
+    SUM(o.order_amount) as total_amount
+FROM 
+    customers c
+JOIN 
+    orders o ON c.customer_id = o.customer_id
+WHERE 
+    o.order_date BETWEEN '2023-01-01' AND '2023-12-31'
+GROUP BY 
+    c.customer_name
+HAVING 
+    total_amount > 1000
+ORDER BY 
+    total_amount DESC
+LIMIT 10;
+</code></pre>
+
+    <h3>12.1 SQL解析</h3>
+    <p>SQL解析器将SQL文本解析为AST，识别出SELECT语句的各个部分：</p>
+    <ul>
+        <li>SELECT子句：c.customer_name, SUM(o.order_amount) as total_amount</li>
+        <li>FROM子句：customers c</li>
+        <li>JOIN子句：orders o ON c.customer_id = o.customer_id</li>
+        <li>WHERE子句：o.order_date BETWEEN '2023-01-01' AND '2023-12-31'</li>
+        <li>GROUP BY子句：c.customer_name</li>
+        <li>HAVING子句：total_amount > 1000</li>
+        <li>ORDER BY子句：total_amount DESC</li>
+        <li>LIMIT子句：10</li>
+    </ul>
+
+    <h3>12.2 逻辑执行计划生成</h3>
+    <p>根据AST生成初始逻辑执行计划：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[LogicalLimitOperator LIMIT 10] --> B[LogicalSortOperator ORDER BY total_amount DESC]
+        B --> C[LogicalFilterOperator HAVING total_amount > 1000]
+        C --> D[LogicalAggregationOperator GROUP BY c.customer_name]
+        D --> E[LogicalJoinOperator c.customer_id = o.customer_id]
+        E --> F[LogicalScanOperator customers]
+        E --> G[LogicalFilterOperator o.order_date BETWEEN '2023-01-01' AND '2023-12-31']
+        G --> H[LogicalScanOperator orders]
+    </div>
+
+    <h3>12.3 CBO优化</h3>
+    <p>CBO优化器应用多种优化规则，生成优化后的逻辑计划：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[LogicalLimitOperator LIMIT 10] --> B[LogicalSortOperator ORDER BY total_amount DESC]
+        B --> C[LogicalFilterOperator HAVING total_amount > 1000]
+        C --> D[LogicalAggregationOperator GROUP BY c.customer_name]
+        D --> E[LogicalJoinOperator c.customer_id = o.customer_id]
+        E --> F[LogicalScanOperator customers 只读取customer_id,customer_name列]
+        E --> G[LogicalFilterOperator o.order_date BETWEEN '2023-01-01' AND '2023-12-31']
+        G --> H[LogicalScanOperator orders 只读取customer_id,order_amount,order_date列]
+    </div>
+
+    <p>应用的优化规则：</p>
+    <ul>
+        <li>列裁剪：只读取查询所需的列</li>
+        <li>谓词下推：将WHERE条件下推到表扫描</li>
+        <li>分区裁剪：根据order_date条件只扫描相关分区</li>
+    </ul>
+
+    <h3>12.4 物理执行计划生成</h3>
+    <p>将优化后的逻辑计划转换为物理执行计划：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[TopNNode LIMIT 10] --> B[SortNode ORDER BY total_amount DESC]
+        B --> C[FilterNode HAVING total_amount > 1000]
+        C --> D[AggregationNode GROUP BY c.customer_name]
+        D --> E[HashJoinNode c.customer_id = o.customer_id]
+        E --> F[OlapScanNode customers]
+        E --> G[FilterNode o.order_date BETWEEN '2023-01-01' AND '2023-12-31']
+        G --> H[OlapScanNode orders]
+    </div>
+
+    <h3>12.5 任务拆分为Fragments</h3>
+    <p>物理执行计划被拆分为多个Fragment：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph Fragment 0
+            A[TopNNode LIMIT 10]
+            B[SortNode]
+            C[FilterNode HAVING]
+            D[AggregationNode Global]
+            A --> B
+            B --> C
+            C --> D
+            D --> E[ExchangeNode GATHER]
+        end
+        subgraph Fragment 1
+            F[AggregationNode Local]
+            F --> G[ExchangeNode HASH]
+        end
+        subgraph Fragment 2
+            H[HashJoinNode]
+            H --> I[OlapScanNode customers]
+            H --> J[FilterNode WHERE]
+            J --> K[OlapScanNode orders]
+        end
+        E -.-> F
+        G -.-> H
+    </div>
+
+    <h3>12.6 FragmentInstance创建与分发</h3>
+    <p>每个Fragment在多个BE节点上创建实例：</p>
+    <ul>
+        <li>Fragment 0：在协调节点上创建1个实例</li>
+        <li>Fragment 1：在多个BE节点上创建实例，进行本地聚合</li>
+        <li>Fragment 2：在多个BE节点上创建实例，执行表扫描和连接</li>
+    </ul>
+
+    <h3>12.7 BE构建Pipeline执行计划</h3>
+    <p>BE节点将Fragment实例转换为Pipeline执行计划：</p>
+
+    <div class="mermaid">
+    flowchart TD
+        subgraph Fragment 2 Pipeline
+            A[HashJoinNode] --> B[OlapScanNode customers]
+            A --> C[FilterNode]
+            C --> D[OlapScanNode orders]
+        end
+        subgraph Fragment 1 Pipeline
+            E[AggregationNode Local] --> F[HashJoinNode结果接收]
+        end
+        subgraph Fragment 0 Pipeline
+            G[TopNNode] --> H[SortNode]
+            H --> I[FilterNode HAVING]
+            I --> J[AggregationNode Global]
+            J --> K[AggregationNode Local结果接收]
+        end
+    </div>
+
+    <h3>12.8 BE执行Pipeline</h3>
+    <p>BE节点并行执行Pipeline：</p>
+    <ol>
+        <li>执行Fragment 2：扫描orders和customers表，应用过滤条件，执行连接</li>
+        <li>执行Fragment 1：对连接结果进行本地聚合</li>
+        <li>执行Fragment 0：对聚合结果进行全局聚合，应用HAVING条件，排序，取前10条</li>
+    </ol>
+
+    <h3>12.9 结果汇总</h3>
+    <p>查询结果从各个BE节点汇总到协调节点，然后返回给客户端：</p>
+    <ol>
+        <li>Fragment 2的结果发送到Fragment 1</li>
+        <li>Fragment 1的结果发送到Fragment 0</li>
+        <li>Fragment 0生成最终结果</li>
+        <li>结果格式化为MySQL协议格式</li>
+        <li>结果返回给客户端</li>
+    </ol>
+
+    <h2>13. 总结</h2>
+    <p>StarRocks的SQL执行流程是一个复杂而高效的过程，涉及多个组件和阶段：</p>
+    <ol>
+        <li>客户端通过MySQL协议连接到FE节点</li>
+        <li>FE解析SQL，生成逻辑执行计划</li>
+        <li>CBO优化器应用多种优化规则，选择最优执行计划</li>
+        <li>生成物理执行计划，并拆分为多个Fragment</li>
+        <li>将Fragment实例分发到BE节点执行</li>
+        <li>BE节点使用Pipeline执行模型高效处理数据</li>
+        <li>结果汇总并返回给客户端</li>
+    </ol>
+
+    <p>StarRocks通过分布式执行、向量化处理、并行计算等技术，实现了高性能的SQL查询执行，能够满足大规模数据分析的需求。</p>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true });
+    </script>
+</body>
+</html>

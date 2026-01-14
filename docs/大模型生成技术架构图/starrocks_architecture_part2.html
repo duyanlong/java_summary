@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarRocks架构与机制详解 - 第二部分</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3, h4 {
+            color: #1a73e8;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .mermaid {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .note {
+            background-color: #e8f0fe;
+            border-left: 4px solid #1a73e8;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .warning {
+            background-color: #fef8e8;
+            border-left: 4px solid #fbbc04;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            mermaid.initialize({
+                startOnLoad: true,
+                theme: 'default',
+                flowchart: {
+                    useMaxWidth: true,
+                    htmlLabels: true
+                }
+            });
+        });
+    </script>
+</head>
+<body>
+    <h1>StarRocks架构与机制详解 - 第二部分</h1>
+
+    <div class="note">
+        <p>本文档分为两部分：</p>
+        <ul>
+            <li><a href="starrocks_architecture_part1.html">第一部分</a>：FE与BE模块启动路径与工作原理、StarRocks架构、数据模型、数据读写流程</li>
+            <li><a href="starrocks_architecture_part2.html">第二部分</a>：Spill Disk机制、Cache机制</li>
+        </ul>
+    </div>
+
+    <h2>目录</h2>
+    <ol>
+        <li><a href="#spill">Spill Disk机制</a>
+            <ul>
+                <li><a href="#spill-principle">工作原理</a></li>
+                <li><a href="#spill-trigger">触发条件</a></li>
+                <li><a href="#spill-cleanup">清理机制</a></li>
+                <li><a href="#spill-limit">限制</a></li>
+                <li><a href="#spill-pros-cons">优劣势</a></li>
+            </ul>
+        </li>
+        <li><a href="#cache">Cache机制</a>
+            <ul>
+                <li><a href="#file-cache">File Cache</a></li>
+                <li><a href="#data-cache">Data Cache</a></li>
+                <li><a href="#cache-read">数据读入Cache条件</a></li>
+                <li><a href="#cache-write">数据写入Cache条件</a></li>
+                <li><a href="#cache-order">读取Cache顺序</a></li>
+                <li><a href="#cache-cleanup">清理条件</a></li>
+                <li><a href="#cache-limit">限制</a></li>
+                <li><a href="#cache-disk-full">磁盘满处理</a></li>
+                <li><a href="#cache-pros-cons">优劣势</a></li>
+            </ul>
+        </li>
+    </ol>
+
+    <h2 id="spill">1. Spill Disk机制</h2>
+
+    <h3 id="spill-principle">1.1 工作原理</h3>
+    <p>Spill Disk是StarRocks在内存不足时将中间结果溢写到磁盘的机制，用于处理大数据量查询。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[查询执行] --> B{内存是否足够}
+        B -->|是| C[内存中处理]
+        B -->|否| D[溢写到磁盘]
+        D --> E[分批处理]
+        E --> F[合并结果]
+        C --> G[返回结果]
+        F --> G
+    </div>
+
+    <p>Spill Disk的工作流程：</p>
+    <ol>
+        <li>查询执行过程中监控内存使用情况</li>
+        <li>当内存使用接近阈值时，触发溢写操作</li>
+        <li>将部分中间结果写入磁盘</li>
+        <li>分批处理数据，每次只加载部分数据到内存</li>
+        <li>处理完成后合并结果</li>
+    </ol>
+
+    <h3 id="spill-trigger">1.2 触发条件</h3>
+    <p>Spill Disk的触发条件包括：</p>
+    <ul>
+        <li>查询内存使用量超过<code>query_mem_limit</code>设置</li>
+        <li>系统内存压力大，接近<code>mem_limit</code>设置</li>
+        <li>特定算子（如排序、聚合、连接）的内存使用量超过阈值</li>
+    </ul>
+
+    <h3 id="spill-cleanup">1.3 清理机制</h3>
+    <p>Spill Disk的清理机制如下：</p>
+    <ul>
+        <li>查询完成后自动清理溢写文件</li>
+        <li>查询失败或取消时也会清理溢写文件</li>
+        <li>定期检查并清理过期的溢写文件（如查询异常终止导致的残留文件）</li>
+        <li>BE重启时清理所有溢写文件</li>
+    </ul>
+
+    <div class="mermaid">
+    sequenceDiagram
+        participant Query as 查询执行
+        participant Spill as Spill管理器
+        participant Disk as 磁盘
+        
+        Query->>Spill: 请求溢写
+        Spill->>Disk: 创建溢写文件
+        Spill->>Query: 返回文件句柄
+        Query->>Disk: 写入数据
+        Query->>Disk: 读取数据
+        Query->>Spill: 通知查询完成
+        Spill->>Disk: 删除溢写文件
+    </div>
+
+    <h3 id="spill-limit">1.4 限制</h3>
+    <p>Spill Disk机制的限制包括：</p>
+    <ul>
+        <li>溢写操作会增加I/O开销，影响查询性能</li>
+        <li>需要额外的磁盘空间存储溢写文件</li>
+        <li>不是所有算子都支持溢写，部分算子仍然需要足够的内存</li>
+        <li>溢写路径需要有足够的磁盘空间和I/O带宽</li>
+        <li>溢写文件的大小受到<code>max_spill_size</code>参数限制</li>
+    </ul>
+
+    <h3 id="spill-pros-cons">1.5 优劣势</h3>
+    <p>Spill Disk机制的优势：</p>
+    <ul>
+        <li>支持处理超出内存容量的大查询</li>
+        <li>提高系统稳定性，避免OOM（内存溢出）错误</li>
+        <li>允许更多查询并发执行</li>
+        <li>减少查询失败率</li>
+    </ul>
+
+    <p>Spill Disk机制的劣势：</p>
+    <ul>
+        <li>查询性能下降，执行时间增加</li>
+        <li>增加磁盘I/O负载</li>
+        <li>需要额外的磁盘空间</li>
+        <li>增加系统复杂性</li>
+    </ul>
+
+    <h2 id="cache">2. Cache机制</h2>
+    <p>StarRocks提供了两种缓存机制：File Cache和Data Cache，用于提高查询性能。</p>
+
+    <div class="mermaid">
+    flowchart TD
+        A[查询请求] --> B{数据是否在Data Cache}
+        B -->|是| C[从Data Cache读取]
+        B -->|否| D{数据是否在File Cache}
+        D -->|是| E[从File Cache读取]
+        D -->|否| F[从存储读取]
+        F --> G{是否满足缓存条件}
+        G -->|是| H[写入Cache]
+        G -->|否| I[不缓存]
+        C --> J[返回数据]
+        E --> J
+        H --> J
+        I --> J
+    </div>
+
+    <h3 id="file-cache">2.1 File Cache</h3>
+    <p>File Cache是StarRocks的文件级缓存，缓存从远程存储（如S3、HDFS）读取的文件。</p>
+
+    <p>File Cache的特点：</p>
+    <ul>
+        <li>缓存粒度是文件</li>
+        <li>适用于存算分离架构</li>
+        <li>减少对远程存储的访问</li>
+        <li>支持本地磁盘缓存</li>
+    </ul>
+
+    <h3 id="data-cache">2.2 Data Cache</h3>
+    <p>Data Cache是StarRocks的数据级缓存，缓存查询结果和中间数据。</p>
+
+    <p>Data Cache的特点：</p>
+    <ul>
+        <li>缓存粒度是数据块</li>
+        <li>支持内存缓存和磁盘缓存</li>
+        <li>可以缓存热点数据</li>
+        <li>支持缓存预热</li>
+    </ul>
+
+    <h3 id="cache-read">2.3 数据读入Cache条件</h3>
+    <p>数据读入Cache的条件包括：</p>
+    <ul>
+        <li>数据访问频率超过阈值</li>
+        <li>数据大小在可接受范围内</li>
+        <li>Cache有足够的空间</li>
+        <li>数据类型适合缓存（如维度表、热点数据）</li>
+        <li>查询模式符合缓存策略（如全表扫描vs点查询）</li>
+    </ul>
+
+    <div class="mermaid">
+    flowchart TD
+        A[数据访问] --> B{访问频率>阈值}
+        B -->|是| C{数据大小<阈值}
+        B -->|否| D[不缓存]
+        C -->|是| E{Cache空间足够}
+        C -->|否| D
+        E -->|是| F[写入Cache]
+        E -->|否| G[淘汰旧数据]
+        G --> F
+    </div>
+
+    <h3 id="cache-write">2.4 数据写入Cache条件</h3>
+    <p>数据写入Cache的条件包括：</p>
+    <ul>
+        <li>对于File Cache：
+            <ul>
+                <li>文件来自远程存储</li>
+                <li>文件大小小于<code>file_cache_max_file_size</code></li>
+                <li>文件访问模式符合缓存策略</li>
+            </ul>
+        </li>
+        <li>对于Data Cache：
+            <ul>
+                <li>数据块大小小于<code>data_cache_max_block_size</code></li>
+                <li>数据访问频率高</li>
+                <li>数据更新频率低</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h3 id="cache-order">2.5 读取Cache顺序</h3>
+    <p>StarRocks读取Cache的顺序如下：</p>
+    <ol>
+        <li>首先检查Data Cache内存层</li>
+        <li>如果未命中，检查Data Cache磁盘层</li>
+        <li>如果仍未命中，检查File Cache</li>
+        <li>如果所有Cache都未命中，从原始存储读取</li>
+    </ol>
+
+    <div class="mermaid">
+    sequenceDiagram
+        participant Query as 查询执行
+        participant MemCache as 内存Cache
+        participant DiskCache as 磁盘Cache
+        participant FileCache as File Cache
+        participant Storage as 存储层
+        
+        Query->>MemCache: 查找数据
+        alt 命中
+            MemCache->>Query: 返回数据
+        else 未命中
+            Query->>DiskCache: 查找数据
+            alt 命中
+                DiskCache->>Query: 返回数据
+                DiskCache->>MemCache: 可能提升到内存Cache
+            else 未命中
+                Query->>FileCache: 查找文件
+                alt 命中
+                    FileCache->>Query: 返回文件
+                else 未命中
+                    Query->>Storage: 读取数据
+                    Storage->>Query: 返回数据
+                    Storage->>FileCache: 可能缓存文件
+                    Storage->>DiskCache: 可能缓存数据
+                end
+            end
+        end
+    </div>
+
+    <h3 id="cache-cleanup">2.6 清理条件</h3>
+    <p>Cache的清理条件包括：</p>
+    <ul>
+        <li>Cache空间不足时，根据LRU（最近最少使用）策略淘汰数据</li>
+        <li>数据过期（超过TTL）</li>
+        <li>数据被更新或删除</li>
+        <li>手动清理（通过SQL命令）</li>
+        <li>BE节点重启</li>
+    </ul>
+
+    <h3 id="cache-limit">2.7 限制</h3>
+    <p>Cache机制的限制包括：</p>
+    <ul>
+        <li>内存Cache大小受<code>memory_cache_size</code>限制</li>
+        <li>磁盘Cache大小受<code>disk_cache_size</code>限制</li>
+        <li>单个文件大小受<code>file_cache_max_file_size</code>限制</li>
+        <li>单个数据块大小受<code>data_cache_max_block_size</code>限制</li>
+        <li>Cache命中率受数据访问模式影响</li>
+        <li>Cache一致性需要额外维护</li>
+    </ul>
+
+    <h3 id="cache-disk-full">2.8 磁盘满处理</h3>
+    <p>当磁盘接近满时，StarRocks的Cache处理策略如下：</p>
+    <ul>
+        <li>停止写入新的缓存数据</li>
+        <li>根据配置的磁盘使用率阈值（如90%）触发紧急淘汰</li>
+        <li>优先淘汰访问频率低的数据</li>
+        <li>如果磁盘使用率超过安全阈值，可能禁用磁盘Cache</li>
+        <li>记录警告日志并发送告警</li>
+    </ul>
+
+    <div class="mermaid">
+    flowchart TD
+        A[写入Cache] --> B{磁盘使用率>警告阈值}
+        B -->|是| C{磁盘使用率>危险阈值}
+        B -->|否| D[正常写入]
+        C -->|是| E[禁用磁盘Cache]
+        C -->|否| F[紧急淘汰]
+        F --> G{空间是否足够}
+        G -->|是| H[写入Cache]
+        G -->|否| E
+    </div>
+
+    <h3 id="cache-pros-cons">2.9 优劣势</h3>
+    <p>Cache机制的优势：</p>
+    <ul>
+        <li>提高查询性能，减少I/O等待</li>
+        <li>减少对远程存储的访问，降低网络开销</li>
+        <li>支持热点数据加速</li>
+        <li>提高系统整体吞吐量</li>
+        <li>降低存储系统负载</li>
+    </ul>
+
+    <p>Cache机制的劣势：</p>
+    <ul>
+        <li>占用额外的内存和磁盘资源</li>
+        <li>增加系统复杂性</li>
+        <li>可能导致数据一致性问题</li>
+        <li>Cache管理和维护需要额外开销</li>
+        <li>不适合所有查询模式（如大表全扫描）</li>
+    </ul>
+
+    <div class="note">
+        <p>返回 <a href="starrocks_architecture_part1.html">第一部分</a>：FE与BE模块启动路径与工作原理、StarRocks架构、数据模型、数据读写流程</p>
+    </div>
+</body>
+</html>
